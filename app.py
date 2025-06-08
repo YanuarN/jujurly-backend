@@ -164,10 +164,11 @@ def submit_feedback(identifier): # Changed function argument
             user = User.query.get(user_id_candidate) # Efficient lookup by primary key
         except ValueError:
             # The identifier is not a valid integer, so it cannot be a user_id.
-            # 'user' remains None, and the next check will handle the 404.
-            pass
+            # Try to find by username as a fallback.
+            user = User.query.filter_by(username=identifier).first()
 
     if not user:
+        # If still not found after trying link_id, user_id (if applicable), and username
         return jsonify({'message': 'User not found for the provided identifier'}), 404 # Updated error message
 
     data = request.get_json()
@@ -262,6 +263,7 @@ def get_user_feedbacks(username):
         processed_feedbacks.append({
             "id": fb_item.id,
             "timestamp": fb_item.created_at.strftime('%Y-%m-%dT%H:%M:%SZ'), # ISO 8601 format
+            "sender": fb_item.anon_identifier,
             "context": item_context_display,
             "sentiment": parsed_sentiment,
             "summary": parsed_summary,

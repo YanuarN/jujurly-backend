@@ -1,0 +1,13 @@
+version: '3.8'
+services:
+  web:
+    build: .
+    ports:
+      - "5001:5001"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - FLASK_APP=app.py
+      - FLASK_ENV=development # Change to 'production' for production
+    volumes:
+      - .:/app # Mounts the current directory into /app in the container for development
+    # command: ["flask", "run", "--host=0.0.0.0"] # Alternative command if you prefer flask run

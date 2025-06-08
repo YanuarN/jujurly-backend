@@ -5,6 +5,8 @@ from flask_sqlalchemy import SQLAlchemy
 import os
 from werkzeug.security import generate_password_hash, check_password_hash # Added for password hashing
 import uuid # Moved import to top
+import llm_handler # Import the LLM handler
+from datetime import datetime # To format timestamp
 
 
 # Initialize Flask app
@@ -92,8 +94,38 @@ def register_user():
         'message': 'User registered successfully', 
         'user_id': new_user.id,
         'username': new_user.username,
+        'email': new_user.email, # Added email to response
         'link_id': new_user.link_id
     }), 201
+
+@app.route('/api/auth/login', methods=['POST'])
+def login_user():
+    data = request.get_json()
+    if not data:
+        return jsonify({'message': 'No input data provided'}), 400
+
+    identifier = data.get('identifier') # Changed from 'email' to 'identifier'
+    password = data.get('password')
+
+    if not identifier or not password:
+        return jsonify({'message': 'Identifier (email/username) and password are required'}), 400
+
+    # Try to find user by email or username
+    user = User.query.filter((User.email == identifier) | (User.username == identifier)).first()
+
+    if user and check_password_hash(user.password_hash, password):
+        # Login successful - In a real app, generate and return a token (e.g., JWT) here
+        return jsonify({
+            'message': 'Login successful',
+            'user_id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'link_id': user.link_id
+            # Add token here in a real app: 'token': generated_token
+        }), 200
+    else:
+        # Invalid credentials
+        return jsonify({'message': 'Invalid credentials'}), 401
 
 @app.route('/api/users', methods=['POST'])
 def create_user():
@@ -140,6 +172,82 @@ def submit_feedback(link_id):
     db.session.commit()
 
     return jsonify({'message': 'Feedback submitted successfully', 'feedback_id': new_feedback.id}), 201
+
+@app.route('/api/users/<username>/feedbacks', methods=['GET'])
+def get_user_feedbacks(username):
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    feedbacks_from_db = Feedback.query.filter_by(user_id=user.id).order_by(Feedback.created_at.desc()).all()
+    
+    processed_feedbacks = []
+
+    for fb_item in feedbacks_from_db:
+        # Prepare the dictionary input for the LLM handler
+        feedback_input_dict = {
+            'anon_identifier': fb_item.anon_identifier or 'Tidak disebutkan',
+            'context_text': fb_item.context_text or 'Tidak disebutkan',
+            'feedback_text': fb_item.feedback_text
+        }
+
+        # Default values for LLM processed fields
+        parsed_sentiment = "Netral Aja 😐"
+        parsed_summary = "Tidak dapat memproses ringkasan saat ini."
+        parsed_constructive_criticism = "Tidak ada saran spesifik saat ini."
+
+        try:
+            # Call the updated LLM handler
+            llm_response_dict = llm_handler.summarize_text_with_llm(
+                item_to_summarise=feedback_input_dict,
+                model_provider="anthropic" # Or get from os.getenv('MODEL_TYPE', "anthropic")
+            )
+
+            # Extract information from the LLM response dictionary
+            # Add emojis based on sentiment, similar to frontend mock
+            raw_sentiment = llm_response_dict.get("sentiment", "Netral Aja")
+            if "error" in raw_sentiment.lower() or "could not process" in llm_response_dict.get("summary", "").lower():
+                # Keep default error messages if LLM indicated an issue
+                pass
+            else:
+                parsed_summary = llm_response_dict.get("summary", parsed_summary)
+                parsed_constructive_criticism = llm_response_dict.get("constructiveCriticism", parsed_constructive_criticism)
+                
+                # Add emoji to sentiment
+                if "positif" in raw_sentiment.lower():
+                    parsed_sentiment = f"{raw_sentiment} 👍"
+                elif "negatif" in raw_sentiment.lower():
+                    parsed_sentiment = f"{raw_sentiment} 😟"
+                else: # Netral or other
+                    parsed_sentiment = f"{raw_sentiment} 😐"
+
+
+        except (ValueError, NotImplementedError) as e:
+            print(f"LLM configuration error for feedback ID {fb_item.id}: {e}")
+            # Fallback values are already set (parsed_sentiment, parsed_summary, etc.)
+        except Exception as e:
+            print(f"Error processing feedback ID {fb_item.id} with LLM: {e}")
+            # Fallback values are already set
+
+        # Determine context for display
+        item_context_display = fb_item.context_text if fb_item.context_text and fb_item.context_text.strip() != '-' else \
+                               (fb_item.anon_identifier if fb_item.anon_identifier and fb_item.anon_identifier.strip() != '-' else "-")
+        
+        # If context is still minimal, use a snippet of the original feedback text as a last resort.
+        if not item_context_display.strip() or item_context_display.strip() == '-':
+            item_context_display = (fb_item.feedback_text[:75] + '...') if fb_item.feedback_text and len(fb_item.feedback_text) > 75 else (fb_item.feedback_text or "Feedback diterima")
+
+
+        processed_feedbacks.append({
+            "id": fb_item.id,
+            "timestamp": fb_item.created_at.strftime('%Y-%m-%dT%H:%M:%SZ'), # ISO 8601 format
+            "context": item_context_display,
+            "sentiment": parsed_sentiment,
+            "summary": parsed_summary,
+            "constructiveCriticism": parsed_constructive_criticism
+        })
+
+    return jsonify(processed_feedbacks), 200
 
 if __name__ == '__main__':
     # Note: For development only. Use a proper WSGI server for production.

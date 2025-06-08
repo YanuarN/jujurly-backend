@@ -6,3 +6,4 @@ Werkzeug
 openai
 anthropic
 google-generativeai
+dotenv

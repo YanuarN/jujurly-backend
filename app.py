@@ -127,6 +127,16 @@ def login_user():
         # Invalid credentials
         return jsonify({'message': 'Invalid credentials'}), 401
 
+@app.route('/api/user/lookup/<identifier>', methods=['GET'])
+def lookup_user(identifier):
+    # Try to find user by username or link_id
+    user = User.query.filter((User.username == identifier) | (User.link_id == identifier) | (User.email == identifier)).first()
+
+    if user:
+        return jsonify({'link_id': user.link_id}), 200
+    else:
+        return jsonify({'message': 'Pengguna tidak ditemukan atau ID tidak valid'}), 404
+
 @app.route('/api/users', methods=['POST'])
 def create_user():
     # This endpoint might be deprecated or re-purposed if all user creation goes through /api/auth/register
@@ -143,11 +153,22 @@ def create_user():
     db.session.commit()
     return jsonify({'message': 'User created successfully', 'link_id': new_link_id, 'user_id': new_user.id}), 201
 
-@app.route('/api/feedback/<link_id>', methods=['POST'])
-def submit_feedback(link_id):
-    user = User.query.filter_by(link_id=link_id).first()
+@app.route('/api/feedback/<identifier>', methods=['POST']) # Changed path parameter
+def submit_feedback(identifier): # Changed function argument
+    user = User.query.filter_by(link_id=identifier).first()
+
     if not user:
-        return jsonify({'message': 'User not found for this link'}), 404
+        # If not found by link_id, try to see if the identifier might be an integer user_id
+        try:
+            user_id_candidate = int(identifier)
+            user = User.query.get(user_id_candidate) # Efficient lookup by primary key
+        except ValueError:
+            # The identifier is not a valid integer, so it cannot be a user_id.
+            # 'user' remains None, and the next check will handle the 404.
+            pass
+
+    if not user:
+        return jsonify({'message': 'User not found for the provided identifier'}), 404 # Updated error message
 
     data = request.get_json()
     if not data:

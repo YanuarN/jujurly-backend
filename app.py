@@ -274,5 +274,5 @@ def get_user_feedbacks(username):
 
 if __name__ == '__main__':
     # Note: For development only. Use a proper WSGI server for production.
-    app.run(debug=True, port=os.getenv('PORT', 5001))
+    app.run(host="0.0.0.0", debug=False, port=os.getenv('PORT', 5001))
 

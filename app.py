@@ -7,6 +7,7 @@ from werkzeug.security import generate_password_hash, check_password_hash # Adde
 import uuid # Moved import to top
 import llm_handler # Import the LLM handler
 from datetime import datetime # To format timestamp
+from urllib.parse import unquote  # Add this import for URL decoding
 
 
 # Initialize Flask app
@@ -164,23 +165,29 @@ def create_user():
     db.session.commit()
     return jsonify({'message': 'User created successfully', 'link_id': new_link_id, 'user_id': new_user.id}), 201
 
-@app.route('/api/feedback/<identifier>', methods=['POST']) # Changed path parameter
-def submit_feedback(identifier): # Changed function argument
-    user = User.query.filter_by(link_id=identifier).first()
-
+@app.route('/api/feedback/<identifier>', methods=['POST'])
+def submit_feedback(identifier):
+    decoded_identifier = unquote(identifier)
+    print(f"Attempting to find user with identifier: {decoded_identifier}")
+    
+    user = User.query.filter_by(username=decoded_identifier).first()
+    if user:
+        print(f"Found user by username: {user.username}")
+    else:
+        print("No user found by username")
+        user = User.query.filter_by(link_id=decoded_identifier).first()
+        if user:
+            print(f"Found user by link_id: {user.link_id}")
+        else:
+            print("No user found by link_id")
+            user = User.query.filter_by(email=decoded_identifier).first()
+            if user:
+                print(f"Found user by email: {user.email}")
+            else:
+                print("No user found by email")
+    
     if not user:
-        # If not found by link_id, try to see if the identifier might be an integer user_id
-        try:
-            user_id_candidate = int(identifier)
-            user = User.query.get(user_id_candidate) # Efficient lookup by primary key
-        except ValueError:
-            # The identifier is not a valid integer, so it cannot be a user_id.
-            # Try to find by username as a fallback.
-            user = User.query.filter_by(username=identifier).first()
-
-    if not user:
-        # If still not found after trying link_id, user_id (if applicable), and username
-        return jsonify({'message': 'User not found for the provided identifier'}), 404 # Updated error message
+        return jsonify({'message': 'User not found for the provided identifier'}), 404
 
     data = request.get_json()
     if not data:
@@ -206,9 +213,14 @@ def submit_feedback(identifier): # Changed function argument
 
     return jsonify({'message': 'Feedback submitted successfully', 'feedback_id': new_feedback.id}), 201
 
-@app.route('/api/users/<username>/feedbacks', methods=['GET'])
-def get_user_feedbacks(username):
-    user = User.query.filter_by(username=username).first()
+@app.route('/api/users/<identifier>/feedbacks', methods=['GET'])
+def get_user_feedbacks(identifier):
+    # Try to find user by username, link_id, or email (same as lookup_user)
+    user = User.query.filter_by(username=identifier).first()
+    if not user:
+        user = User.query.filter_by(link_id=identifier).first()
+    if not user:
+        user = User.query.filter_by(email=identifier).first()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 

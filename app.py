@@ -12,8 +12,18 @@ from urllib.parse import unquote  # Add this import for URL decoding
 
 # Initialize Flask app
 app = Flask(__name__)
-# Enable CORS
-CORS(app)
+# Enable CORS with specific origins
+CORS(app, resources={
+    r"/api/*": {
+        "origins": [
+            "http://localhost:5173",
+            "https://jujurly-two.vercel.app",
+            "https://jujurly.space"
+        ],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 # Configure the database URI
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///default.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False # Recommended to disable to save resources

@@ -12,14 +12,10 @@ from urllib.parse import unquote  # Add this import for URL decoding
 
 # Initialize Flask app
 app = Flask(__name__)
-# Enable CORS with specific origins
+# Enable CORS with all origins
 CORS(app, resources={
     r"/api/*": {
-        "origins": [
-            "http://localhost:5173",
-            "https://jujurly-two.vercel.app",
-            "https://jujurly.space"
-        ],
+        "origins": "*",
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
